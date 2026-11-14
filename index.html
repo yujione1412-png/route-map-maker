@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.1.1</title>
+<title>ルート案内マップメーカー v1.2.0</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -82,6 +82,11 @@
   .viaIcon{background:none;border:none}
   .via-dot{width:24px;height:24px;border-radius:50%;background:#fff;border:5px solid #e53935;box-shadow:0 1px 4px rgba(0,0,0,.45)}
   .row button.adjust{background:#fff3e0;border-color:#fb8c00;color:#e65100;font-weight:700}
+  .swatches{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:2px 0 6px}
+  .sw{width:32px;height:32px;border-radius:50%;border:2px solid #ccc;cursor:pointer;padding:0;flex:none}
+  .sw.active{border-color:#222;box-shadow:0 0 0 2px #fff,0 0 0 4px #222}
+  .swtxt{border:1px solid #bbb;background:#fff;border-radius:16px;padding:8px 11px;font-size:12px;cursor:pointer;flex:none}
+  .swtxt.active{background:#222;color:#fff;border-color:#222}
   #adjBar{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#e3f2fd;border:2px solid #1e88e5;border-radius:10px;padding:9px 14px;z-index:1300;font-size:13px;font-weight:700;display:none;box-shadow:0 2px 10px rgba(0,0,0,.25);max-width:94vw;text-align:center;line-height:1.5}
   #adjBar button{margin-left:8px;border:1px solid #bbb;background:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700}
   /* 目印ラベル */
@@ -111,7 +116,7 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.1.1</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.2.0</span></div>
   <div class="spacer"></div>
   <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
@@ -147,20 +152,35 @@
     <button data-mode="pedestrian">徒歩</button>
     <button data-mode="bicycle">自転車</button>
   </div>
-  <label class="f">ルート線の太さ</label>
-  <div class="seg" id="widthSeg">
-    <button data-w="thin">細い</button>
-    <button data-w="normal" class="active">ふつう</button>
-    <button data-w="thick">太い</button>
-  </div>
-  <label class="chk"><input type="checkbox" id="showArrows" checked> ルート上に進行方向の矢印を出す</label>
-  <div class="note" style="margin-top:2px">矢印の向きが合わないときは、その矢印をタップすると45°ずつ回せます。</div>
   <label class="chk"><input type="checkbox" id="fitAfter" checked> 作成後に全体が見えるよう調整する</label>
+
+  <h2 id="advHead" style="cursor:pointer;background:#eeeeee;border-left-color:#616161">５．ルートと矢印の設定 <span id="advMark" style="float:right;font-size:12px">▶ 開く</span></h2>
+  <div id="advBody" style="display:none">
+    <label class="f">ルート線の色</label>
+    <div class="swatches" id="routeColorSw"></div>
+    <label class="f">ルート線の太さ</label>
+    <div class="seg" id="widthSeg">
+      <button data-w="thin">細い</button>
+      <button data-w="normal" class="active">ふつう</button>
+      <button data-w="thick">太い</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="showArrows" checked> ルート上に進行方向の矢印を出す</label>
+    <label class="f">矢印の形</label>
+    <div class="seg" id="arrowShapeSeg">
+      <button data-s="chevron" class="active">とんがり</button>
+      <button data-s="arrow">矢印</button>
+      <button data-s="circle">丸</button>
+    </div>
+    <label class="f">矢印の色</label>
+    <div class="swatches" id="arrowColorSw"></div>
+    <div class="note">矢印の向きが合わないときは、その矢印をタップすると45°ずつ回せます。</div>
+  </div>
 
   <button id="makeBtn">ルートを作成する</button>
   <div class="note">
     使い方：物件と出発地点を指定して「ルートを作成する」を押すだけです。<br>
     ルートが思った道と違うときは、各出発地点の「ルートを調整」から経由地点を置いて直せます。<br>
+    置いた印（現地・出発地点・目印）は、長押しするとドラッグで位置を直せます。<br>
     住所で見つからないときは「地図をタップで指定」が確実です。<br>
     できた地図は右上の「画像で保存」で写真として保存でき、そのまま印刷やLINE送信に使えます。<br>
     入力した内容はこの端末に自動で保存されます。
@@ -204,6 +224,9 @@ function load(){
   }catch(e){}
   if(!state.arrowFix)state.arrowFix={};
   if(!state.lineW)state.lineW='normal';
+  if(!state.routeColor)state.routeColor='#e53935';
+  if(!state.arrowShape)state.arrowShape='chevron';
+  if(!state.arrowColor)state.arrowColor='route';
   state.deps.forEach(function(d){if(!d.vias)d.vias=[];});
   if(!state.deps.length){state.deps.push({id:uid(),name:'出発地点１',addr:'',lat:null,lng:null,dist:null,dur:null,vias:[]});}
 }
@@ -229,10 +252,52 @@ function spotIcon(spot){
 }
 
 /* ---------- マーカー ---------- */
+/* 印を長押しするとドラッグで動かせるようにする（誤操作防止のため長押し式） */
+function makeMovable(marker,onDone){
+  marker.on('add',function(){
+    var el=marker.getElement();if(!el||el._mv)return;el._mv=true;
+    var timer=null,sx=0,sy=0,moving=false,dead=false;
+    function cancel(){if(timer){clearTimeout(timer);timer=null;}}
+    function onDown(e){
+      sx=e.clientX;sy=e.clientY;cancel();
+      timer=setTimeout(function(){
+        timer=null;moving=true;lastMoveGuard=Date.now();
+        map.dragging.disable();
+        toast('そのままドラッグで移動できます。離すと確定します',2500);
+      },600);
+    }
+    function onMove(e){
+      if(dead)return;
+      if(timer&&Math.sqrt((e.clientX-sx)*(e.clientX-sx)+(e.clientY-sy)*(e.clientY-sy))>12)cancel();
+      if(moving)marker.setLatLng(map.mouseEventToLatLng(e));
+    }
+    function onUp(){
+      if(dead)return;
+      cancel();
+      if(moving){moving=false;map.dragging.enable();lastMoveGuard=Date.now();onDone(marker.getLatLng());}
+    }
+    el.addEventListener('pointerdown',onDown);
+    window.addEventListener('pointermove',onMove);
+    window.addEventListener('pointerup',onUp);
+    marker.on('remove',function(){
+      dead=true;cancel();
+      el.removeEventListener('pointerdown',onDown);
+      window.removeEventListener('pointermove',onMove);
+      window.removeEventListener('pointerup',onUp);
+    });
+  });
+}
 function drawDest(){
   if(destMarker){map.removeLayer(destMarker);destMarker=null;}
   if(state.dest.lat!=null){
-    destMarker=L.marker([state.dest.lat,state.dest.lng],{icon:destIcon(),zIndexOffset:1000}).addTo(map);
+    destMarker=L.marker([state.dest.lat,state.dest.lng],{icon:destIcon(),zIndexOffset:1000});
+    makeMovable(destMarker,function(ll){
+      state.dest.lat=ll.lat;state.dest.lng=ll.lng;save();
+      state.deps.forEach(clearRoute);drawDest();renderDeps();updateLegend();
+      state.deps.forEach(function(d){maybeAuto(d);});
+      toast('現地の位置を直しました');
+    });
+    destMarker.addTo(map);
     $('destCoord').textContent='指定済み（'+state.dest.lat.toFixed(5)+', '+state.dest.lng.toFixed(5)+'）';
   }else{$('destCoord').textContent='まだ指定されていません';}
   $('captionAddr').textContent=state.dest.addr||'';
@@ -243,14 +308,26 @@ function drawDepMarker(dep){
   if(rec.marker){map.removeLayer(rec.marker);rec.marker=null;}
   if(dep.lat!=null){
     var idx=state.deps.indexOf(dep);
-    rec.marker=L.marker([dep.lat,dep.lng],{icon:depIcon(dep,depColor(idx)),zIndexOffset:900}).addTo(map);
+    rec.marker=L.marker([dep.lat,dep.lng],{icon:depIcon(dep,depColor(idx)),zIndexOffset:900});
+    makeMovable(rec.marker,function(ll){
+      dep.lat=ll.lat;dep.lng=ll.lng;save();
+      clearRoute(dep);drawDepMarker(dep);maybeAuto(dep);renderDeps();
+      toast('出発地点の位置を直しました');
+    });
+    rec.marker.addTo(map);
   }
 }
 function drawSpotMarker(spot){
   var rec=layers[spot.id]||(layers[spot.id]={route:[],arrows:[],marker:null,spotMarker:null});
   if(rec.spotMarker){map.removeLayer(rec.spotMarker);rec.spotMarker=null;}
   if(spot.lat!=null){
-    rec.spotMarker=L.marker([spot.lat,spot.lng],{icon:spotIcon(spot),zIndexOffset:800,interactive:false}).addTo(map);
+    rec.spotMarker=L.marker([spot.lat,spot.lng],{icon:spotIcon(spot),zIndexOffset:800});
+    makeMovable(rec.spotMarker,function(ll){
+      spot.lat=ll.lat;spot.lng=ll.lng;save();
+      drawSpotMarker(spot);renderSpots();
+      toast('目印の位置を直しました');
+    });
+    rec.spotMarker.addTo(map);
   }
 }
 function clearRoute(dep){
@@ -318,7 +395,7 @@ function renderSpots(){
 function updateLegend(){
   var lg=$('legend');var rows='';
   state.deps.forEach(function(dep,i){
-    if(dep.dist!=null){rows+='<div class="row2"><div class="bar" style="background:#e53935"></div><div>'+esc(dep.name)+' から 約'+dep.dist.toFixed(1)+'km ／ 約'+Math.round(dep.dur)+'分</div></div>';}
+    if(dep.dist!=null){rows+='<div class="row2"><div class="bar" style="background:'+routeColor()+'"></div><div>'+esc(dep.name)+' から 約'+dep.dist.toFixed(1)+'km ／ 約'+Math.round(dep.dur)+'分</div></div>';}
   });
   if(rows){lg.innerHTML=rows;lg.style.display='block';}else{lg.style.display='none';}
 }
@@ -332,7 +409,7 @@ function drawViaMarkers(dep){
   if(adjusting!==dep.id)return;
   (dep.vias||[]).forEach(function(v,vi){
     var m=L.marker([v.lat,v.lng],{draggable:true,zIndexOffset:960,
-      icon:L.divIcon({className:'viaIcon',iconSize:[24,24],iconAnchor:[12,12],html:'<div class="via-dot"></div>'})}).addTo(map);
+      icon:L.divIcon({className:'viaIcon',iconSize:[24,24],iconAnchor:[12,12],html:'<div class="via-dot" style="border-color:'+routeColor()+'"></div>'})}).addTo(map);
     m.on('dragend',function(){var ll=m.getLatLng();v.lat=ll.lat;v.lng=ll.lng;v._t=Date.now();save();routeOne(dep).then(function(){save();renderDeps();updateLegend();});});
     m.on('click',function(){
       if(v._t&&Date.now()-v._t<300)return;
@@ -377,7 +454,7 @@ function endPick(){
 }
 $('pickCancel').addEventListener('click',endPick);
 map.on('click',function(e){
-  if(Date.now()-lastArrowTap<400)return;
+  if(Date.now()-lastArrowTap<400||Date.now()-lastMoveGuard<500)return;
   if(adjusting&&!picking){
     var ad=findDep(adjusting);
     if(ad){
@@ -387,7 +464,10 @@ map.on('click',function(e){
     }
     return;
   }
-  if(!picking)return;
+  if(!picking){
+    if(!$('panel').classList.contains('hidden')){$('panel').classList.add('hidden');}
+    return;
+  }
   var picked=picking;
   var lat=e.latlng.lat,lng=e.latlng.lng;
   var pickedDep=null;
@@ -465,9 +545,31 @@ function bearing(a,b){
 var WIDTHS={thin:{core:3,casing:6},normal:{core:5,casing:8},thick:{core:7,casing:11}};
 var routeCache={};
 var lastArrowTap=0;
-function arrowIcon(rot,color){
+var lastMoveGuard=0;
+function routeColor(){return state.routeColor||'#e53935';}
+function arrowColor(){var c=state.arrowColor||'route';return c==='route'?routeColor():c;}
+function arrowIcon(rot){
+  var ac=arrowColor();
+  var shape=state.arrowShape||'chevron';
+  var inner;
+  if(shape==='arrow'){inner='<path d="M12 2.5 L19 11 L13.6 11 L13.6 21.5 L10.4 21.5 L10.4 11 L5 11 Z" fill="'+ac+'" stroke="#ffffff" stroke-width="1.2"/>';}
+  else if(shape==='circle'){inner='<circle cx="12" cy="12" r="8.5" fill="#ffffff" stroke="'+ac+'" stroke-width="2.4"/><circle cx="12" cy="12" r="3.2" fill="'+ac+'"/>';}
+  else{inner='<path d="M5 3 L20 12 L5 21 L8.5 12 Z" fill="#ffffff" stroke="'+ac+'" stroke-width="2.4"/>';}
   return L.divIcon({className:'arrIcon',iconSize:[28,28],iconAnchor:[14,14],
-    html:'<div class="arr-box" style="transform:rotate('+rot+'deg)"><svg width="28" height="28" viewBox="0 0 24 24"><path d="M5 3 L20 12 L5 21 L8.5 12 Z" fill="#ffffff" stroke="'+color+'" stroke-width="2.4"/></svg></div>'});
+    html:'<div class="arr-box" style="transform:rotate('+rot+'deg)"><svg width="28" height="28" viewBox="0 0 24 24">'+inner+'</svg></div>'});
+}
+var COLORSET=[['#e53935','赤'],['#1e88e5','青'],['#43a047','緑'],['#fb8c00','オレンジ'],['#8e24aa','紫'],['#37474f','黒']];
+function buildSwatches(el,withRoute){
+  el.innerHTML='';
+  if(withRoute){var b=document.createElement('button');b.className='swtxt';b.textContent='線と同じ';b.setAttribute('data-v','route');el.appendChild(b);}
+  COLORSET.forEach(function(c){var s=document.createElement('button');s.className='sw';s.style.background=c[0];s.title=c[1];s.setAttribute('data-v',c[0]);el.appendChild(s);});
+}
+function markSwatches(el,val){
+  var bs=el.querySelectorAll('[data-v]');
+  for(var i=0;i<bs.length;i++)bs[i].classList.toggle('active',bs[i].getAttribute('data-v')===val);
+}
+function redrawAllRoutes(){
+  state.deps.forEach(function(d){if(routeCache[d.id])drawRoute(d,routeCache[d.id]);});
 }
 function arrowOffset(depId,idx){
   if(state.arrowFix&&state.arrowFix[depId])return state.arrowFix[depId][idx]||0;
@@ -477,7 +579,7 @@ function drawRoute(dep,res){
   clearRoute(dep);
   dep.dist=res.dist;dep.dur=res.dur;
   var rec=layers[dep.id]||(layers[dep.id]={route:[],arrows:[],marker:null,spotMarker:null});
-  var color='#e53935';
+  var color=routeColor();
   var pts=res.points.map(function(p){return L.latLng(p[0],p[1]);});
   var W=WIDTHS[state.lineW||'normal'];
   rec.route.push(L.polyline(pts,{color:'#ffffff',weight:W.casing,opacity:.95}).addTo(map));
@@ -497,14 +599,14 @@ function drawRoute(dep,res){
         var lng=pts[i-1].lng+(pts[i].lng-pts[i-1].lng)*t;
         var ang=bearing([pts[i-1].lat,pts[i-1].lng],[pts[i].lat,pts[i].lng]);
         var aidx=rec.arrows.length;
-        var mk=L.marker([lat,lng],{icon:arrowIcon(ang-90+arrowOffset(dep.id,aidx),color),zIndexOffset:950}).addTo(map);
+        var mk=L.marker([lat,lng],{icon:arrowIcon(ang-90+arrowOffset(dep.id,aidx)),zIndexOffset:950}).addTo(map);
         (function(marker,baseAng,idx){
           marker.on('click',function(){
             lastArrowTap=Date.now();
             state.arrowFix=state.arrowFix||{};
             var tbl=state.arrowFix[dep.id]||(state.arrowFix[dep.id]={});
             var cur=((tbl[idx]||0)+45)%360;tbl[idx]=cur;save();
-            marker.setIcon(arrowIcon(baseAng-90+cur,color));
+            marker.setIcon(arrowIcon(baseAng-90+cur));
             toast('矢印を45°回しました',1500);
           });
         })(mk,ang,aidx);
@@ -581,6 +683,26 @@ $('widthSeg').addEventListener('click',function(e){
   save();
   state.deps.forEach(function(d){if(routeCache[d.id])drawRoute(d,routeCache[d.id]);});
 });
+$('advHead').addEventListener('click',function(){
+  var b=$('advBody');var open=b.style.display!=='none';
+  b.style.display=open?'none':'block';
+  $('advMark').textContent=open?'▶ 開く':'▼ 閉じる';
+});
+$('routeColorSw').addEventListener('click',function(e){
+  var v=e.target.getAttribute&&e.target.getAttribute('data-v');if(!v)return;
+  state.routeColor=v;save();markSwatches(this,v);redrawAllRoutes();updateLegend();
+});
+$('arrowColorSw').addEventListener('click',function(e){
+  var v=e.target.getAttribute&&e.target.getAttribute('data-v');if(!v)return;
+  state.arrowColor=v;save();markSwatches(this,v);redrawAllRoutes();
+});
+$('arrowShapeSeg').addEventListener('click',function(e){
+  if(e.target.tagName!=='BUTTON')return;
+  state.arrowShape=e.target.getAttribute('data-s');
+  var bs=this.querySelectorAll('button');for(var i=0;i<bs.length;i++)bs[i].classList.toggle('active',bs[i]===e.target);
+  save();redrawAllRoutes();
+});
+$('showArrows').addEventListener('change',function(){redrawAllRoutes();});
 $('makeBtn').addEventListener('click',makeAll);
 $('panelBtn').addEventListener('click',function(){$('panel').classList.toggle('hidden');});
 $('printBtn').addEventListener('click',function(){window.print();});
@@ -605,6 +727,12 @@ var bs=$('modeSeg').querySelectorAll('button');
 for(var i=0;i<bs.length;i++)bs[i].classList.toggle('active',bs[i].getAttribute('data-mode')===state.mode);
 var wb=$('widthSeg').querySelectorAll('button');
 for(var j=0;j<wb.length;j++)wb[j].classList.toggle('active',wb[j].getAttribute('data-w')===(state.lineW||'normal'));
+buildSwatches($('routeColorSw'),false);
+buildSwatches($('arrowColorSw'),true);
+markSwatches($('routeColorSw'),state.routeColor||'#e53935');
+markSwatches($('arrowColorSw'),state.arrowColor||'route');
+var asb=$('arrowShapeSeg').querySelectorAll('button');
+for(var k=0;k<asb.length;k++)asb[k].classList.toggle('active',asb[k].getAttribute('data-s')===(state.arrowShape||'chevron'));
 drawDest();
 renderDeps();renderSpots();
 state.deps.forEach(drawDepMarker);
