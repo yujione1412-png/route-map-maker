@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.0.1</title>
+<title>ルート案内マップメーカー v1.1.0</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -75,9 +75,14 @@
   .dest-pin{width:34px;height:34px;border-radius:50%;background:#c62828;color:#fff;font-style:normal;display:flex;align-items:center;justify-content:center;font-size:19px;border:2px solid #fff;margin-left:2px}
   /* 出発地点マーカー */
   .depIcon{background:none;border:none}
-  .dep-box{display:flex;align-items:center;gap:5px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
-  .dep-dot{width:20px;height:20px;border-radius:50%;border:3px solid #fff;flex:none}
-  .dep-name{background:rgba(255,255,255,.95);font-weight:700;font-size:14px;padding:2px 8px;border-radius:6px;white-space:nowrap;color:#222}
+  .dep-box{display:flex;align-items:flex-start;gap:5px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
+  .dep-name{background:rgba(255,255,255,.95);font-weight:700;font-size:14px;padding:2px 8px;border-radius:6px;white-space:nowrap;color:#222;margin-top:3px;border:1px solid #bbb}
+  /* ルート調整の経由地点 */
+  .viaIcon{background:none;border:none}
+  .via-dot{width:24px;height:24px;border-radius:50%;background:#fff;border:5px solid #e53935;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+  .row button.adjust{background:#fff3e0;border-color:#fb8c00;color:#e65100;font-weight:700}
+  #adjBar{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#e3f2fd;border:2px solid #1e88e5;border-radius:10px;padding:9px 14px;z-index:1300;font-size:13px;font-weight:700;display:none;box-shadow:0 2px 10px rgba(0,0,0,.25);max-width:94vw;text-align:center;line-height:1.5}
+  #adjBar button{margin-left:8px;border:1px solid #bbb;background:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700}
   /* 目印ラベル */
   .spotIcon{background:none;border:none}
   .spot-box{display:flex;align-items:center;gap:5px}
@@ -102,7 +107,7 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.0.1</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.1.0</span></div>
   <div class="spacer"></div>
   <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
@@ -110,6 +115,7 @@
 </div>
 
 <div id="pickBar"><span id="pickMsg"></span><button id="pickCancel">やめる</button></div>
+<div id="adjBar"><span id="adjMsg"></span><button id="adjDone">終わる</button></div>
 
 <div id="panel">
   <h2>１．物件（目的地）</h2>
@@ -143,6 +149,7 @@
   <button id="makeBtn">ルートを作成する</button>
   <div class="note">
     使い方：物件と出発地点を指定して「ルートを作成する」を押すだけです。<br>
+    ルートが思った道と違うときは、各出発地点の「ルートを調整」から経由地点を置いて直せます。<br>
     住所で見つからないときは「地図をタップで指定」が確実です。<br>
     できた地図は右上の「画像で保存」で写真として保存でき、そのまま印刷やLINE送信に使えます。<br>
     入力した内容はこの端末に自動で保存されます。
@@ -166,11 +173,11 @@ function $(id){return document.getElementById(id);}
 /* ---------- 地図 ---------- */
 var map=L.map('map',{zoomControl:true}).setView([32.8039,130.7079],13);
 map.zoomControl.setPosition('bottomright');
-var gsiPale=L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{attribution:'&copy; 国土地理院',maxZoom:18});
-var gsiStd=L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',{attribution:'&copy; 国土地理院',maxZoom:18});
-var osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19});
-gsiPale.addTo(map);
-L.control.layers({'淡色地図（見やすい）':gsiPale,'地理院の標準地図':gsiStd,'OpenStreetMap':osm},null,{position:'bottomright'}).addTo(map);
+var osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19,crossOrigin:true});
+var gsiStd=L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',{attribution:'&copy; 国土地理院',maxZoom:18,crossOrigin:true});
+var gsiPale=L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{attribution:'&copy; 国土地理院',maxZoom:18,crossOrigin:true});
+osm.addTo(map);
+L.control.layers({'標準の地図':osm,'地理院の標準地図':gsiStd,'地理院の淡色地図':gsiPale},null,{position:'bottomright'}).addTo(map);
 
 var destMarker=null;
 var layers={}; // depId -> {route:[],arrows:[],marker}
@@ -184,7 +191,8 @@ function load(){
     var s=JSON.parse(localStorage.getItem(LS_KEY)||'null');
     if(s&&s.dest){state=s;}
   }catch(e){}
-  if(!state.deps.length){state.deps.push({id:uid(),name:'出発地点１',addr:'',lat:null,lng:null,dist:null,dur:null});}
+  state.deps.forEach(function(d){if(!d.vias)d.vias=[];});
+  if(!state.deps.length){state.deps.push({id:uid(),name:'出発地点１',addr:'',lat:null,lng:null,dist:null,dur:null,vias:[]});}
 }
 
 /* ---------- 表示ヘルパー ---------- */
@@ -199,8 +207,8 @@ function destIcon(){
 }
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function depIcon(dep,color){
-  return L.divIcon({className:'depIcon',iconSize:null,iconAnchor:[10,10],
-    html:'<div class="dep-box"><div class="dep-dot" style="background:'+color+'"></div><div class="dep-name">'+esc(dep.name||'出発地点')+'</div></div>'});
+  return L.divIcon({className:'depIcon',iconSize:null,iconAnchor:[13,32],
+    html:'<div class="dep-box"><svg width="26" height="34" viewBox="0 0 26 34"><path d="M13 33 C13 33 2 20 2 12 A11 11 0 1 1 24 12 C24 20 13 33 13 33 Z" fill="'+color+'" stroke="#ffffff" stroke-width="2"/><circle cx="13" cy="12" r="4.5" fill="#ffffff"/></svg><div class="dep-name">'+esc(dep.name||'出発地点')+'</div></div>'});
 }
 function spotIcon(spot){
   return L.divIcon({className:'spotIcon',iconSize:null,iconAnchor:[6,6],
@@ -251,18 +259,24 @@ function renderDeps(){
       '<button class="del">削除</button></div>'+
       '<input type="text" data-f="addr" value="'+esc(dep.addr)+'" placeholder="住所（例：熊本市西区春日3丁目）">'+
       '<div class="row"><button class="search">住所で探す</button><button class="pick">地図をタップで指定</button></div>'+
+      '<div class="row"><button class="adjust">'+(adjusting===dep.id?'調整を終わる':'ルートを調整（経由地点を置く）')+'</button></div>'+
+      ((dep.vias&&dep.vias.length)?'<div class="coord">経由地点 '+dep.vias.length+'件あり（調整ボタンから変更できます）</div>':'')+
       '<div class="result">'+(dep.dist!=null?('距離 約'+dep.dist.toFixed(1)+'km ／ '+(state.mode==='auto'?'車で':'')+'約'+Math.round(dep.dur)+'分'):(dep.lat!=null?'指定済み（ルート未作成）':'まだ指定されていません'))+'</div>';
     var nameIn=card.querySelector('[data-f=name]'),addrIn=card.querySelector('[data-f=addr]');
     nameIn.addEventListener('input',function(){dep.name=nameIn.value;drawDepMarker(dep);save();});
     addrIn.addEventListener('input',function(){dep.addr=addrIn.value;save();});
     card.querySelector('.del').addEventListener('click',function(){
+      if(adjusting===dep.id){adjusting=null;$('adjBar').style.display='none';}
       clearRoute(dep);var rec=layers[dep.id];
       if(rec){if(rec.marker)map.removeLayer(rec.marker);delete layers[dep.id];}
       state.deps.splice(state.deps.indexOf(dep),1);save();renderDeps();updateLegend();
     });
     card.querySelector('.search').addEventListener('click',function(){geocode(addrIn.value,function(lat,lng,found){
-      dep.lat=lat;dep.lng=lng;if(found)dep.addr=found;drawDepMarker(dep);map.setView([lat,lng],Math.max(map.getZoom(),14));save();maybeAuto(dep);renderDeps();
+      dep.lat=lat;dep.lng=lng;dep.vias=[];if(found)dep.addr=found;drawDepMarker(dep);drawViaMarkers(dep);map.setView([lat,lng],Math.max(map.getZoom(),14));save();maybeAuto(dep);renderDeps();
     });});
+    card.querySelector('.adjust').addEventListener('click',function(){
+      if(adjusting===dep.id){endAdjust();}else{startAdjust(dep);}
+    });
     card.querySelector('.pick').addEventListener('click',function(){startPick('dep',dep.id,dep.name||'出発地点');});
     box.appendChild(card);
   });
@@ -290,14 +304,54 @@ function renderSpots(){
 function updateLegend(){
   var lg=$('legend');var rows='';
   state.deps.forEach(function(dep,i){
-    if(dep.dist!=null){rows+='<div class="row2"><div class="bar" style="background:'+depColor(i)+'"></div><div>'+esc(dep.name)+' から 約'+dep.dist.toFixed(1)+'km ／ 約'+Math.round(dep.dur)+'分</div></div>';}
+    if(dep.dist!=null){rows+='<div class="row2"><div class="bar" style="background:#e53935"></div><div>'+esc(dep.name)+' から 約'+dep.dist.toFixed(1)+'km ／ 約'+Math.round(dep.dur)+'分</div></div>';}
   });
   if(rows){lg.innerHTML=rows;lg.style.display='block';}else{lg.style.display='none';}
 }
 
+/* ---------- ルート調整（経由地点） ---------- */
+var adjusting=null; // 調整中の出発地点のid
+function drawViaMarkers(dep){
+  var rec=layers[dep.id]||(layers[dep.id]={route:[],arrows:[],marker:null,spotMarker:null});
+  rec.viaMarkers=rec.viaMarkers||[];
+  rec.viaMarkers.forEach(function(m){map.removeLayer(m);});rec.viaMarkers=[];
+  if(adjusting!==dep.id)return;
+  (dep.vias||[]).forEach(function(v,vi){
+    var m=L.marker([v.lat,v.lng],{draggable:true,zIndexOffset:960,
+      icon:L.divIcon({className:'viaIcon',iconSize:[24,24],iconAnchor:[12,12],html:'<div class="via-dot"></div>'})}).addTo(map);
+    m.on('dragend',function(){var ll=m.getLatLng();v.lat=ll.lat;v.lng=ll.lng;v._t=Date.now();save();routeOne(dep).then(function(){save();renderDeps();updateLegend();});});
+    m.on('click',function(){
+      if(v._t&&Date.now()-v._t<300)return;
+      dep.vias.splice(vi,1);save();drawViaMarkers(dep);
+      routeOne(dep).then(function(){save();renderDeps();updateLegend();});
+      toast('経由地点を消しました');
+    });
+    rec.viaMarkers.push(m);
+  });
+}
+function startAdjust(dep){
+  if(state.dest.lat==null||dep.lat==null){toast('先に物件と出発地点を指定してください',4000);return;}
+  if(picking)endPick();
+  adjusting=dep.id;
+  drawViaMarkers(dep);
+  $('adjMsg').textContent='「'+(dep.name||'出発地点')+'」の調整中。地図をタップで経由地点が増え、白い丸はドラッグで移動、タップで削除できます';
+  $('adjBar').style.display='block';
+  if(window.innerWidth<700){$('panel').classList.add('hidden');}
+  renderDeps();
+}
+function endAdjust(){
+  var d=adjusting?findDep(adjusting):null;
+  adjusting=null;
+  if(d)drawViaMarkers(d);
+  $('adjBar').style.display='none';
+  renderDeps();
+}
+$('adjDone').addEventListener('click',endAdjust);
+
 /* ---------- 地図タップで指定 ---------- */
 var picking=null; // {type:'dest'|'dep'|'spot', id}
 function startPick(type,id,label){
+  if(adjusting)endAdjust();
   picking={type:type,id:id};
   document.body.classList.add('picking');
   $('pickMsg').textContent='地図をタップして「'+label+'」の場所を指定してください';
@@ -309,12 +363,21 @@ function endPick(){
 }
 $('pickCancel').addEventListener('click',endPick);
 map.on('click',function(e){
+  if(adjusting&&!picking){
+    var ad=findDep(adjusting);
+    if(ad){
+      ad.vias=ad.vias||[];ad.vias.push({lat:e.latlng.lat,lng:e.latlng.lng});
+      save();drawViaMarkers(ad);
+      routeOne(ad).then(function(){save();renderDeps();updateLegend();});
+    }
+    return;
+  }
   if(!picking)return;
   var picked=picking;
   var lat=e.latlng.lat,lng=e.latlng.lng;
   var pickedDep=null;
   if(picked.type==='dest'){state.dest.lat=lat;state.dest.lng=lng;drawDest();state.deps.forEach(clearRoute);}
-  else if(picked.type==='dep'){pickedDep=findDep(picked.id);if(pickedDep){pickedDep.lat=lat;pickedDep.lng=lng;clearRoute(pickedDep);drawDepMarker(pickedDep);}}
+  else if(picked.type==='dep'){pickedDep=findDep(picked.id);if(pickedDep){pickedDep.lat=lat;pickedDep.lng=lng;pickedDep.vias=[];clearRoute(pickedDep);drawDepMarker(pickedDep);drawViaMarkers(pickedDep);}}
   else if(picked.type==='spot'){var spot=findSpot(picked.id);if(spot){spot.lat=lat;spot.lng=lng;drawSpotMarker(spot);}}
   save();endPick();renderDeps();renderSpots();updateLegend();
   toast('指定しました');
@@ -354,17 +417,23 @@ function decodePolyline(str,precision){
 }
 function routeValhalla(dep){
   var costing=state.mode; // auto / pedestrian / bicycle
-  var body={locations:[{lat:dep.lat,lon:dep.lng},{lat:state.dest.lat,lon:state.dest.lng}],costing:costing,units:'kilometers',language:'ja-JP'};
+  var locs=[{lat:dep.lat,lon:dep.lng,type:'break'}];
+  (dep.vias||[]).forEach(function(v){locs.push({lat:v.lat,lon:v.lng,type:'via'});});
+  locs.push({lat:state.dest.lat,lon:state.dest.lng,type:'break'});
+  var body={locations:locs,costing:costing,units:'kilometers',language:'ja-JP'};
   return fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(function(r){if(!r.ok)throw new Error('valhalla');return r.json();})
     .then(function(j){
-      var leg=j.trip.legs[0];
-      return {points:decodePolyline(leg.shape,6),dist:j.trip.summary.length,dur:j.trip.summary.time/60};
+      var pts=[];
+      j.trip.legs.forEach(function(leg,i){var p=decodePolyline(leg.shape,6);if(i>0)p=p.slice(1);pts=pts.concat(p);});
+      return {points:pts,dist:j.trip.summary.length,dur:j.trip.summary.time/60};
     });
 }
 function routeOSRM(dep){
   var prof=state.mode==='auto'?'driving':(state.mode==='bicycle'?'cycling':'foot');
-  var url='https://router.project-osrm.org/route/v1/'+prof+'/'+dep.lng+','+dep.lat+';'+state.dest.lng+','+state.dest.lat+'?overview=full&geometries=geojson';
+  var all=[dep].concat(dep.vias||[],[state.dest]);
+  var coords=all.map(function(p){return p.lng+','+p.lat;}).join(';');
+  var url='https://router.project-osrm.org/route/v1/'+prof+'/'+coords+'?overview=full&geometries=geojson';
   return fetch(url).then(function(r){return r.json();}).then(function(j){
     if(!j.routes||!j.routes.length)throw new Error('osrm');
     var rt=j.routes[0];
@@ -381,10 +450,10 @@ function drawRoute(dep,res){
   clearRoute(dep);
   dep.dist=res.dist;dep.dur=res.dur;
   var rec=layers[dep.id]||(layers[dep.id]={route:[],arrows:[],marker:null,spotMarker:null});
-  var idx=state.deps.indexOf(dep);var color=depColor(idx);
+  var color='#e53935';
   var pts=res.points.map(function(p){return L.latLng(p[0],p[1]);});
-  rec.route.push(L.polyline(pts,{color:'#ffffff',weight:13,opacity:.95}).addTo(map));
-  rec.route.push(L.polyline(pts,{color:color,weight:8,opacity:.95}).addTo(map));
+  rec.route.push(L.polyline(pts,{color:'#ffffff',weight:8,opacity:.95}).addTo(map));
+  rec.route.push(L.polyline(pts,{color:color,weight:5,opacity:.98}).addTo(map));
   rec.route.forEach(function(l){l.bringToBack();});
   if(destMarker)destMarker.setZIndexOffset(1000);
   if($('showArrows').checked){
@@ -400,7 +469,7 @@ function drawRoute(dep,res){
         var lng=pts[i-1].lng+(pts[i].lng-pts[i-1].lng)*t;
         var ang=bearing([pts[i-1].lat,pts[i-1].lng],[pts[i].lat,pts[i].lng]);
         var icon=L.divIcon({className:'arrIcon',iconSize:[28,28],iconAnchor:[14,14],
-          html:'<div class="arr-box" style="transform:rotate('+ang+'deg)"><svg width="28" height="28" viewBox="0 0 24 24"><path d="M5 3 L20 12 L5 21 L8.5 12 Z" fill="'+color+'" stroke="#fff" stroke-width="1.6"/></svg></div>'});
+          html:'<div class="arr-box" style="transform:rotate('+ang+'deg)"><svg width="28" height="28" viewBox="0 0 24 24"><path d="M5 3 L20 12 L5 21 L8.5 12 Z" fill="#ffffff" stroke="'+color+'" stroke-width="2.4"/></svg></div>'});
         rec.arrows.push(L.marker([lat,lng],{icon:icon,interactive:false,zIndexOffset:950}).addTo(map));
         next+=step;
       }
@@ -453,7 +522,7 @@ $('destSearch').addEventListener('click',function(){
 $('destPick').addEventListener('click',function(){startPick('dest',null,state.dest.name||'現地');});
 $('depAdd').addEventListener('click',function(){
   if(state.deps.length>=6){toast('出発地点は最大6件までです');return;}
-  state.deps.push({id:uid(),name:'出発地点'+(state.deps.length+1),addr:'',lat:null,lng:null,dist:null,dur:null});
+  state.deps.push({id:uid(),name:'出発地点'+(state.deps.length+1),addr:'',lat:null,lng:null,dist:null,dur:null,vias:[]});
   save();renderDeps();
 });
 $('spotAdd').addEventListener('click',function(){
@@ -507,7 +576,8 @@ function armBack(){try{history.pushState({rmm:1},'');}catch(e){}}
 armBack();
 window.addEventListener('popstate',function(){
   armBack();
-  if(picking){endPick();toast('場所の指定をやめました');}
+  if(adjusting){endAdjust();toast('ルートの調整を終わりました');}
+  else if(picking){endPick();toast('場所の指定をやめました');}
   else if(!$('panel').classList.contains('hidden')){$('panel').classList.add('hidden');}
   else{$('panel').classList.remove('hidden');}
 });
