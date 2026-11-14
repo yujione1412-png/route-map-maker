@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.1.0</title>
+<title>ルート案内マップメーカー v1.1.1</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -69,14 +69,15 @@
   #legend .bar{width:26px;height:7px;border-radius:4px;flex:none}
   /* 現地マーカー（画像のイメージ） */
   .destIcon{background:none;border:none}
-  .dest-box{display:flex;align-items:center;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))}
+  .dest-box{display:flex;align-items:center;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4));width:max-content;margin-left:19px;transform:translate(-100%,-50%)}
   .dest-label{background:#c62828;color:#fff;font-weight:900;font-size:29px;letter-spacing:4px;padding:5px 12px 5px 16px;border-radius:4px;white-space:nowrap;line-height:1.25}
   .dest-tri{width:0;height:0;border-top:11px solid transparent;border-bottom:11px solid transparent;border-left:16px solid #c62828}
   .dest-pin{width:34px;height:34px;border-radius:50%;background:#c62828;color:#fff;font-style:normal;display:flex;align-items:center;justify-content:center;font-size:19px;border:2px solid #fff;margin-left:2px}
   /* 出発地点マーカー */
   .depIcon{background:none;border:none}
   .dep-box{display:flex;align-items:flex-start;gap:5px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
-  .dep-name{background:rgba(255,255,255,.95);font-weight:700;font-size:14px;padding:2px 8px;border-radius:6px;white-space:nowrap;color:#222;margin-top:3px;border:1px solid #bbb}
+  .dep-name{background:rgba(255,255,255,.95);font-weight:700;font-size:14px;padding:2px 8px;border-radius:6px;white-space:nowrap;color:#222;margin-top:3px;border:1px solid #bbb;position:relative}
+  .dep-name::before{content:'';position:absolute;left:-7px;top:50%;transform:translateY(-50%);width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-right:7px solid rgba(255,255,255,.95)}
   /* ルート調整の経由地点 */
   .viaIcon{background:none;border:none}
   .via-dot{width:24px;height:24px;border-radius:50%;background:#fff;border:5px solid #e53935;box-shadow:0 1px 4px rgba(0,0,0,.45)}
@@ -92,6 +93,9 @@
   .arrIcon{background:none;border:none}
   .arr-box{display:flex;align-items:center;justify-content:center}
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:rgba(30,30,30,.92);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:2000;display:none;max-width:92vw;text-align:center}
+  @media (max-width:520px){
+    #legend{top:60px;bottom:auto;right:8px}
+  }
   @media print{
     #header,#panel,#pickBar,.leaflet-control-container,.toast{display:none!important}
     #mapWrap{position:absolute;inset:0}
@@ -107,7 +111,7 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.1.0</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.1.1</span></div>
   <div class="spacer"></div>
   <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
@@ -143,7 +147,14 @@
     <button data-mode="pedestrian">徒歩</button>
     <button data-mode="bicycle">自転車</button>
   </div>
+  <label class="f">ルート線の太さ</label>
+  <div class="seg" id="widthSeg">
+    <button data-w="thin">細い</button>
+    <button data-w="normal" class="active">ふつう</button>
+    <button data-w="thick">太い</button>
+  </div>
   <label class="chk"><input type="checkbox" id="showArrows" checked> ルート上に進行方向の矢印を出す</label>
+  <div class="note" style="margin-top:2px">矢印の向きが合わないときは、その矢印をタップすると45°ずつ回せます。</div>
   <label class="chk"><input type="checkbox" id="fitAfter" checked> 作成後に全体が見えるよう調整する</label>
 
   <button id="makeBtn">ルートを作成する</button>
@@ -191,6 +202,8 @@ function load(){
     var s=JSON.parse(localStorage.getItem(LS_KEY)||'null');
     if(s&&s.dest){state=s;}
   }catch(e){}
+  if(!state.arrowFix)state.arrowFix={};
+  if(!state.lineW)state.lineW='normal';
   state.deps.forEach(function(d){if(!d.vias)d.vias=[];});
   if(!state.deps.length){state.deps.push({id:uid(),name:'出発地点１',addr:'',lat:null,lng:null,dist:null,dur:null,vias:[]});}
 }
@@ -202,7 +215,7 @@ function toast(msg,ms){
   clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.style.display='none';},ms||2600);
 }
 function destIcon(){
-  return L.divIcon({className:'destIcon',iconSize:[190,46],iconAnchor:[168,23],
+  return L.divIcon({className:'destIcon',iconSize:null,iconAnchor:[0,0],
     html:'<div class="dest-box"><div class="dest-label">'+esc(state.dest.name||'現地')+'</div><div class="dest-tri"></div><div class="dest-pin">&#8962;</div></div>'});
 }
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -241,6 +254,7 @@ function drawSpotMarker(spot){
   }
 }
 function clearRoute(dep){
+  delete routeCache[dep.id];
   var rec=layers[dep.id];if(!rec)return;
   rec.route.forEach(function(l){map.removeLayer(l);});rec.route=[];
   rec.arrows.forEach(function(l){map.removeLayer(l);});rec.arrows=[];
@@ -363,6 +377,7 @@ function endPick(){
 }
 $('pickCancel').addEventListener('click',endPick);
 map.on('click',function(e){
+  if(Date.now()-lastArrowTap<400)return;
   if(adjusting&&!picking){
     var ad=findDep(adjusting);
     if(ad){
@@ -383,6 +398,7 @@ map.on('click',function(e){
   toast('指定しました');
   if(pickedDep)maybeAuto(pickedDep);
   else if(picked.type==='dest'){state.deps.forEach(function(d){maybeAuto(d);});}
+  if(!$('panel').classList.contains('hidden')){$('panel').classList.add('hidden');}
 });
 function findDep(id){for(var i=0;i<state.deps.length;i++)if(state.deps[i].id===id)return state.deps[i];return null;}
 function findSpot(id){for(var i=0;i<state.spots.length;i++)if(state.spots[i].id===id)return state.spots[i];return null;}
@@ -446,15 +462,27 @@ function bearing(a,b){
   var x=Math.cos(a[0]*Math.PI/180)*Math.sin(b[0]*Math.PI/180)-Math.sin(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.cos((b[1]-a[1])*Math.PI/180);
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
+var WIDTHS={thin:{core:3,casing:6},normal:{core:5,casing:8},thick:{core:7,casing:11}};
+var routeCache={};
+var lastArrowTap=0;
+function arrowIcon(rot,color){
+  return L.divIcon({className:'arrIcon',iconSize:[28,28],iconAnchor:[14,14],
+    html:'<div class="arr-box" style="transform:rotate('+rot+'deg)"><svg width="28" height="28" viewBox="0 0 24 24"><path d="M5 3 L20 12 L5 21 L8.5 12 Z" fill="#ffffff" stroke="'+color+'" stroke-width="2.4"/></svg></div>'});
+}
+function arrowOffset(depId,idx){
+  if(state.arrowFix&&state.arrowFix[depId])return state.arrowFix[depId][idx]||0;
+  return 0;
+}
 function drawRoute(dep,res){
   clearRoute(dep);
   dep.dist=res.dist;dep.dur=res.dur;
   var rec=layers[dep.id]||(layers[dep.id]={route:[],arrows:[],marker:null,spotMarker:null});
   var color='#e53935';
   var pts=res.points.map(function(p){return L.latLng(p[0],p[1]);});
-  rec.route.push(L.polyline(pts,{color:'#ffffff',weight:8,opacity:.95}).addTo(map));
-  rec.route.push(L.polyline(pts,{color:color,weight:5,opacity:.98}).addTo(map));
-  rec.route.forEach(function(l){l.bringToBack();});
+  var W=WIDTHS[state.lineW||'normal'];
+  rec.route.push(L.polyline(pts,{color:'#ffffff',weight:W.casing,opacity:.95}).addTo(map));
+  rec.route.push(L.polyline(pts,{color:color,weight:W.core,opacity:.98}).addTo(map));
+  routeCache[dep.id]=res;
   if(destMarker)destMarker.setZIndexOffset(1000);
   if($('showArrows').checked){
     // 一定間隔ごとに矢印
@@ -468,9 +496,19 @@ function drawRoute(dep,res){
         var lat=pts[i-1].lat+(pts[i].lat-pts[i-1].lat)*t;
         var lng=pts[i-1].lng+(pts[i].lng-pts[i-1].lng)*t;
         var ang=bearing([pts[i-1].lat,pts[i-1].lng],[pts[i].lat,pts[i].lng]);
-        var icon=L.divIcon({className:'arrIcon',iconSize:[28,28],iconAnchor:[14,14],
-          html:'<div class="arr-box" style="transform:rotate('+ang+'deg)"><svg width="28" height="28" viewBox="0 0 24 24"><path d="M5 3 L20 12 L5 21 L8.5 12 Z" fill="#ffffff" stroke="'+color+'" stroke-width="2.4"/></svg></div>'});
-        rec.arrows.push(L.marker([lat,lng],{icon:icon,interactive:false,zIndexOffset:950}).addTo(map));
+        var aidx=rec.arrows.length;
+        var mk=L.marker([lat,lng],{icon:arrowIcon(ang-90+arrowOffset(dep.id,aidx),color),zIndexOffset:950}).addTo(map);
+        (function(marker,baseAng,idx){
+          marker.on('click',function(){
+            lastArrowTap=Date.now();
+            state.arrowFix=state.arrowFix||{};
+            var tbl=state.arrowFix[dep.id]||(state.arrowFix[dep.id]={});
+            var cur=((tbl[idx]||0)+45)%360;tbl[idx]=cur;save();
+            marker.setIcon(arrowIcon(baseAng-90+cur,color));
+            toast('矢印を45°回しました',1500);
+          });
+        })(mk,ang,aidx);
+        rec.arrows.push(mk);
         next+=step;
       }
       acc+=d;
@@ -536,6 +574,13 @@ $('modeSeg').addEventListener('click',function(e){
   var bs=this.querySelectorAll('button');for(var i=0;i<bs.length;i++)bs[i].classList.toggle('active',bs[i]===e.target);
   state.deps.forEach(clearRoute);save();renderDeps();updateLegend();
 });
+$('widthSeg').addEventListener('click',function(e){
+  if(e.target.tagName!=='BUTTON')return;
+  state.lineW=e.target.getAttribute('data-w');
+  var bs=this.querySelectorAll('button');for(var i=0;i<bs.length;i++)bs[i].classList.toggle('active',bs[i]===e.target);
+  save();
+  state.deps.forEach(function(d){if(routeCache[d.id])drawRoute(d,routeCache[d.id]);});
+});
 $('makeBtn').addEventListener('click',makeAll);
 $('panelBtn').addEventListener('click',function(){$('panel').classList.toggle('hidden');});
 $('printBtn').addEventListener('click',function(){window.print();});
@@ -558,6 +603,8 @@ $('destName').value=state.dest.name||'現地';
 $('destAddr').value=state.dest.addr||'';
 var bs=$('modeSeg').querySelectorAll('button');
 for(var i=0;i<bs.length;i++)bs[i].classList.toggle('active',bs[i].getAttribute('data-mode')===state.mode);
+var wb=$('widthSeg').querySelectorAll('button');
+for(var j=0;j<wb.length;j++)wb[j].classList.toggle('active',wb[j].getAttribute('data-w')===(state.lineW||'normal'));
 drawDest();
 renderDeps();renderSpots();
 state.deps.forEach(drawDepMarker);
