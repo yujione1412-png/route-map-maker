@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.0.0</title>
+<title>ルート案内マップメーカー v1.0.1</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -15,10 +15,16 @@
   #map{position:absolute;inset:0;background:#f2efe9}
   /* ヘッダー */
   #header{position:fixed;top:0;left:0;right:0;height:52px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;padding:0 10px;z-index:1200}
-  #header .title{font-weight:700;font-size:16px;white-space:nowrap}
+  #header .title{font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
   #header .ver{font-size:11px;color:#888}
-  #header .spacer{flex:1}
-  .hbtn{border:1px solid #ccc;background:#fff;border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
+  #header .spacer{flex:1;min-width:2px}
+  .hbtn{border:1px solid #ccc;background:#fff;border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer;white-space:nowrap;flex:none}
+  @media (max-width:520px){
+    #header{gap:5px;padding:0 6px}
+    #header .title{font-size:13px}
+    #header .ver{display:none}
+    .hbtn{padding:6px 7px;font-size:12px}
+  }
   .hbtn.main{background:#c62828;border-color:#c62828;color:#fff;font-weight:700}
   /* パネル */
   #panel{position:fixed;top:60px;left:8px;bottom:8px;width:min(338px,calc(100vw - 16px));background:#fff;border-radius:12px;box-shadow:0 2px 14px rgba(0,0,0,.3);z-index:1100;overflow-y:auto;padding:12px;transition:transform .25s}
@@ -50,7 +56,7 @@
   .note{font-size:11px;color:#777;line-height:1.6;margin-top:10px}
   .chk{font-size:13px;display:flex;gap:6px;align-items:center;margin-top:8px}
   /* 拾うモードの案内 */
-  #pickBar{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#fff8e1;border:2px solid #f9a825;border-radius:10px;padding:9px 14px;z-index:1300;font-size:14px;font-weight:700;display:none;box-shadow:0 2px 10px rgba(0,0,0,.25);white-space:nowrap;max-width:94vw}
+  #pickBar{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#fff8e1;border:2px solid #f9a825;border-radius:10px;padding:9px 14px;z-index:1300;font-size:14px;font-weight:700;display:none;box-shadow:0 2px 10px rgba(0,0,0,.25);max-width:94vw;text-align:center;line-height:1.5}
   #pickBar button{margin-left:8px;border:1px solid #bbb;background:#fff;border-radius:6px;padding:4px 8px;cursor:pointer}
   body.picking #map{cursor:crosshair}
   /* 地図上の見出し（保存画像にも入る） */
@@ -96,9 +102,9 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.0.0</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.0.1</span></div>
   <div class="spacer"></div>
-  <button class="hbtn" id="panelBtn">設定の開閉</button>
+  <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
   <button class="hbtn main" id="saveBtn">画像で保存</button>
 </div>
@@ -160,10 +166,11 @@ function $(id){return document.getElementById(id);}
 /* ---------- 地図 ---------- */
 var map=L.map('map',{zoomControl:true}).setView([32.8039,130.7079],13);
 map.zoomControl.setPosition('bottomright');
-var voyager=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO',maxZoom:19});
+var gsiPale=L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{attribution:'&copy; 国土地理院',maxZoom:18});
+var gsiStd=L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',{attribution:'&copy; 国土地理院',maxZoom:18});
 var osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19});
-voyager.addTo(map);
-L.control.layers({'見やすい地図':voyager,'標準の地図':osm},null,{position:'bottomright'}).addTo(map);
+gsiPale.addTo(map);
+L.control.layers({'淡色地図（見やすい）':gsiPale,'地理院の標準地図':gsiStd,'OpenStreetMap':osm},null,{position:'bottomright'}).addTo(map);
 
 var destMarker=null;
 var layers={}; // depId -> {route:[],arrows:[],marker}
@@ -493,6 +500,17 @@ if(state.dest.lat!=null)pts.push([state.dest.lat,state.dest.lng]);
 state.deps.forEach(function(d){if(d.lat!=null)pts.push([d.lat,d.lng]);});
 if(pts.length>1)map.fitBounds(L.latLngBounds(pts).pad(0.15));
 else if(pts.length===1)map.setView(pts[0],15);
+/* ---------- スマホの「戻る」対策 ----------
+   戻るを押してもアプリは終了せず、アプリ内の一つ前の状態に戻る。
+   優先順位：場所指定の途中なら中止 → 設定が開いていれば閉じる → 閉じていれば開く */
+function armBack(){try{history.pushState({rmm:1},'');}catch(e){}}
+armBack();
+window.addEventListener('popstate',function(){
+  armBack();
+  if(picking){endPick();toast('場所の指定をやめました');}
+  else if(!$('panel').classList.contains('hidden')){$('panel').classList.add('hidden');}
+  else{$('panel').classList.remove('hidden');}
+});
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}
 })();
 </script>
