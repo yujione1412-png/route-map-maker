@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.3.0</title>
+<title>ルート案内マップメーカー v1.3.1</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -116,7 +116,7 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.3.0</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.3.1</span></div>
   <div class="spacer"></div>
   <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
@@ -501,10 +501,21 @@ function coordsFromText(t){
   return null;
 }
 function resolveMapsUrl(url){
-  return fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url))
-    .then(function(r){if(!r.ok)throw new Error('proxy');return r.text();})
-    .then(function(body){return coordsFromText(body.slice(0,400000));})
-    .catch(function(){return null;});
+  return fetch('https://unshorten.me/json/'+encodeURIComponent(url))
+    .then(function(r){if(!r.ok)throw new Error('unshorten');return r.json();})
+    .then(function(j){
+      if(j&&j.resolved_url){
+        var c=coordsFromText(j.resolved_url)||coordsFromText(decodeURIComponent(j.resolved_url));
+        if(c) return c;
+      }
+      throw new Error('nocoords');
+    })
+    .catch(function(){
+      return fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url))
+        .then(function(r){if(!r.ok)throw new Error('proxy');return r.text();})
+        .then(function(body){return coordsFromText(body.slice(0,400000));})
+        .catch(function(){return null;});
+    });
 }
 
 /* ---------- 住所検索 ---------- */
