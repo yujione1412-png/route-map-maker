@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.2.0</title>
+<title>ルート案内マップメーカー v1.3.0</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -116,7 +116,7 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.2.0</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.3.0</span></div>
   <div class="spacer"></div>
   <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
@@ -483,10 +483,45 @@ map.on('click',function(e){
 function findDep(id){for(var i=0;i<state.deps.length;i++)if(state.deps[i].id===id)return state.deps[i];return null;}
 function findSpot(id){for(var i=0;i<state.spots.length;i++)if(state.spots[i].id===id)return state.spots[i];return null;}
 
+/* ---------- Googleマップ共有リンク・座標の読み取り ---------- */
+function coordsFromText(t){
+  if(!t) return null;
+  var urlM=String(t).match(/https?:\/\/[^\s　]+/);
+  var s=urlM?urlM[0]:String(t).trim();
+  var m=s.match(/!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=s.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=s.match(/[?&](?:q|ll|query|destination|origin)=(-?\d{1,3}\.\d+)(?:%2C|,)(-?\d{1,3}\.\d+)/i);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  if(!urlM){
+    m=s.match(/^(-?\d{1,3}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})$/);
+    if(m&&Math.abs(parseFloat(m[1]))<=90&&Math.abs(parseFloat(m[2]))<=180) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  }
+  return null;
+}
+function resolveMapsUrl(url){
+  return fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url))
+    .then(function(r){if(!r.ok)throw new Error('proxy');return r.text();})
+    .then(function(body){return coordsFromText(body.slice(0,400000));})
+    .catch(function(){return null;});
+}
+
 /* ---------- 住所検索 ---------- */
 function geocode(q,done){
   q=(q||'').trim();
   if(!q){toast('住所を入力してください');return;}
+  var direct=coordsFromText(q);
+  if(direct){done(direct.lat,direct.lng,'共有リンクの地点');return;}
+  var urlM=q.match(/https?:\/\/[^\s　]+/);
+  if(urlM&&/(goo\.gl|google\.[a-z.]+\/maps|maps\.google\.)/.test(urlM[0])){
+    toast('リンク先を確認しています…',4000);
+    resolveMapsUrl(urlM[0]).then(function(c){
+      if(c) done(c.lat,c.lng,'共有リンクの地点');
+      else toast('リンクから位置が取れませんでした。住所か地図タップで指定してください',4000);
+    });
+    return;
+  }
   toast('住所を探しています…',4000);
   fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ja&countrycodes=jp&q='+encodeURIComponent(q))
     .then(function(r){return r.json();})
