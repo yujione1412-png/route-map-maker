@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.3.2</title>
+<title>ルート案内マップメーカー v1.3.3</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -116,7 +116,7 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.3.2</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.3.3</span></div>
   <div class="spacer"></div>
   <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
@@ -511,6 +511,40 @@ function placeQueryFromText(t){
          .replace(/[−ー]/g,'-').replace(/^\s+|\s+$/g,'');
   return seg||null;
 }
+function extractFromPage(body){
+  if(!body) return null;
+  var text=body.slice(0,400000);
+  var c=coordsFromText(text);
+  if(c) return c;
+  var q=placeQueryFromText(text);
+  if(q){
+    var c2=coordsFromText(q);
+    if(c2) return c2;
+    return {query:q};
+  }
+  return null;
+}
+function queryFromMicrolink(j){
+  if(!j||!j.data) return null;
+  var d=j.data;
+  if(d.url){
+    var c=coordsFromText(d.url);
+    if(c) return c;
+    var q=placeQueryFromText(d.url);
+    if(q) return {query:q};
+  }
+  var title=(d.title||'').replace(/^\s+|\s+$/g,'');
+  if(!title) return null;
+  var parts=title.split(' · ').map(function(s){return s.replace(/^\s+|\s+$/g,'');}).filter(Boolean);
+  var name=parts[0]||'';
+  var addr=parts.length>1?parts[parts.length-1]:'';
+  var addressLike=/^\d+\s*-?\s*(chōme|chome)/i.test(name)||/^\d+-\d+/i.test(name);
+  if(!addressLike&&name) return {query:name};
+  var a=(addr||name).replace(/,?\s*Japan\s*$/i,'').replace(/\b\d{3}-\d{4}\b/g,'').replace(/,\s*,/g,',').replace(/^\s+|\s+$/g,'');
+  var m=a.match(/^(\d+)\s*-?\s*(?:chōme|chome)-(\d+)-(\d+)\s+([^,]+)(.*)$/i);
+  if(m) a=m[4]+' '+m[1]+'-'+m[2]+'-'+m[3]+m[5];
+  return a?{query:a}:null;
+}
 function resolveMapsUrl(url){
   var segQ=placeQueryFromText(url);
   if(segQ){
@@ -518,26 +552,28 @@ function resolveMapsUrl(url){
     if(c0) return Promise.resolve(c0);
     return Promise.resolve({query:segQ});
   }
-  var proxies=['https://api.cors.lol/?url=','https://api.allorigins.win/raw?url='];
-  function tryProxy(i){
-    if(i>=proxies.length) return Promise.resolve(null);
-    return fetch(proxies[i]+encodeURIComponent(url))
+  var enc=encodeURIComponent(url);
+  function viaPage(proxy){
+    return fetch(proxy+enc)
       .then(function(r){if(!r.ok)throw new Error('proxy');return r.text();})
-      .then(function(body){
-        body=body.slice(0,400000);
-        var c=coordsFromText(body);
-        if(c) return c;
-        var q2=placeQueryFromText(body);
-        if(q2){
-          var c2=coordsFromText(q2);
-          if(c2) return c2;
-          return {query:q2};
-        }
-        return tryProxy(i+1);
-      })
-      .catch(function(){return tryProxy(i+1);});
+      .then(function(body){return extractFromPage(body);});
   }
-  return tryProxy(0);
+  function viaMicrolink(){
+    return fetch('https://api.microlink.io?url='+enc)
+      .then(function(r){if(!r.ok)throw new Error('microlink');return r.json();})
+      .then(function(j){return queryFromMicrolink(j);});
+  }
+  var steps=[
+    function(){return viaPage('https://api.cors.lol/?url=');},
+    viaMicrolink,
+    function(){return viaPage('https://api.allorigins.win/raw?url=');},
+    function(){return viaPage('https://api.cors.lol/?url=');}
+  ];
+  function run(i){
+    if(i>=steps.length) return Promise.resolve(null);
+    return steps[i]().then(function(r){return r||run(i+1);}).catch(function(){return run(i+1);});
+  }
+  return run(0);
 }
 
 /* ---------- 住所検索 ---------- */
