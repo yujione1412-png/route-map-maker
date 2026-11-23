@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.3.3</title>
+<title>ルート案内マップメーカー v1.3.4</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -116,7 +116,7 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.3.3</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.3.4</span></div>
   <div class="spacer"></div>
   <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
@@ -511,10 +511,27 @@ function placeQueryFromText(t){
          .replace(/[−ー]/g,'-').replace(/^\s+|\s+$/g,'');
   return seg||null;
 }
+function coordsFromBody(text){
+  var m;
+  try{text=text.replace(/\\u003d/g,'=').replace(/\\u0026/g,'&').replace(/&amp;/g,'&');}catch(e){}
+  // 地図ページの og:image などに入っている center=緯度%2C経度
+  m=text.match(/[?&;]center=(-?\d{1,3}\.\d+)(?:%2C|%2c|,)(-?\d{1,3}\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=text.match(/!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=text.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=text.match(/[?&;](?:q|ll|query|destination|daddr|sll)=(-?\d{1,3}\.\d+)(?:%2C|%2c|,\+?)(-?\d{1,3}\.\d+)/i);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  // ページ内JSONの [null,null,緯度,経度]
+  m=text.match(/\[null,null,(-?\d{1,2}\.\d{4,}),(-?\d{1,3}\.\d{4,})\]/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  return null;
+}
 function extractFromPage(body){
   if(!body) return null;
-  var text=body.slice(0,400000);
-  var c=coordsFromText(text);
+  var text=String(body).slice(0,600000);
+  var c=coordsFromBody(text);
   if(c) return c;
   var q=placeQueryFromText(text);
   if(q){
@@ -545,6 +562,11 @@ function queryFromMicrolink(j){
   if(m) a=m[4]+' '+m[1]+'-'+m[2]+'-'+m[3]+m[5];
   return a?{query:a}:null;
 }
+function fetchT(u,ms){
+  var ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+  var t=setTimeout(function(){if(ctl)ctl.abort();},ms||8000);
+  return fetch(u,ctl?{signal:ctl.signal}:{}).then(function(r){clearTimeout(t);return r;},function(e){clearTimeout(t);throw e;});
+}
 function resolveMapsUrl(url){
   var segQ=placeQueryFromText(url);
   if(segQ){
@@ -554,20 +576,37 @@ function resolveMapsUrl(url){
   }
   var enc=encodeURIComponent(url);
   function viaPage(proxy){
-    return fetch(proxy+enc)
+    return fetchT(proxy+enc)
       .then(function(r){if(!r.ok)throw new Error('proxy');return r.text();})
       .then(function(body){return extractFromPage(body);});
   }
+  // allorigins /get は転送先の最終URL(status.url)も返してくれる
+  function viaAlloriginsGet(){
+    return fetchT('https://api.allorigins.win/get?url='+enc)
+      .then(function(r){if(!r.ok)throw new Error('ao');return r.json();})
+      .then(function(j){
+        var fin=j&&j.status&&j.status.url;
+        if(fin){
+          var c=coordsFromBody(fin);
+          if(c) return c;
+          var q=placeQueryFromText(fin);
+          if(q){var c2=coordsFromText(q);return c2||{query:q};}
+        }
+        return extractFromPage(j&&j.contents);
+      });
+  }
   function viaMicrolink(){
-    return fetch('https://api.microlink.io?url='+enc)
+    return fetchT('https://api.microlink.io?url='+enc)
       .then(function(r){if(!r.ok)throw new Error('microlink');return r.json();})
       .then(function(j){return queryFromMicrolink(j);});
   }
   var steps=[
+    function(){return viaPage('https://corsproxy.io/?url=');},
     function(){return viaPage('https://api.cors.lol/?url=');},
+    viaAlloriginsGet,
     viaMicrolink,
-    function(){return viaPage('https://api.allorigins.win/raw?url=');},
-    function(){return viaPage('https://api.cors.lol/?url=');}
+    function(){return fetchT('https://api.codetabs.com/v1/proxy/?quest='+url).then(function(r){if(!r.ok)throw new Error('ct');return r.text();}).then(extractFromPage);},
+    function(){return viaPage('https://api.allorigins.win/raw?url=');}
   ];
   function run(i){
     if(i>=steps.length) return Promise.resolve(null);
