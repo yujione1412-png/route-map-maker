@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ルート案内マップメーカー v1.3.4</title>
+<title>ルート案内マップメーカー v1.3.5</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#c62828">
 <link rel="icon" href="icons/icon-192.png">
@@ -116,7 +116,7 @@
 </div>
 
 <div id="header">
-  <div class="title">ルート案内マップ <span class="ver">v1.3.4</span></div>
+  <div class="title">ルート案内マップ <span class="ver">v1.3.5</span></div>
   <div class="spacer"></div>
   <button class="hbtn" id="panelBtn">設定</button>
   <button class="hbtn" id="printBtn">印刷</button>
@@ -515,9 +515,9 @@ function coordsFromBody(text){
   var m;
   try{text=text.replace(/\\u003d/g,'=').replace(/\\u0026/g,'&').replace(/&amp;/g,'&');}catch(e){}
   // 地図ページの og:image などに入っている center=緯度%2C経度
-  m=text.match(/[?&;]center=(-?\d{1,3}\.\d+)(?:%2C|%2c|,)(-?\d{1,3}\.\d+)/);
-  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
   m=text.match(/!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=text.match(/[?&;]center=(-?\d{1,3}\.\d+)(?:%2C|%2c|,)(-?\d{1,3}\.\d+)/);
   if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
   m=text.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/);
   if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
@@ -601,16 +601,21 @@ function resolveMapsUrl(url){
       .then(function(j){return queryFromMicrolink(j);});
   }
   var steps=[
+    viaAlloriginsGet,
     function(){return viaPage('https://corsproxy.io/?url=');},
     function(){return viaPage('https://api.cors.lol/?url=');},
-    viaAlloriginsGet,
-    viaMicrolink,
     function(){return fetchT('https://api.codetabs.com/v1/proxy/?quest='+url).then(function(r){if(!r.ok)throw new Error('ct');return r.text();}).then(extractFromPage);},
-    function(){return viaPage('https://api.allorigins.win/raw?url=');}
+    function(){return viaPage('https://api.allorigins.win/raw?url=');},
+    viaMicrolink
   ];
+  var fallbackQ=null;
   function run(i){
-    if(i>=steps.length) return Promise.resolve(null);
-    return steps[i]().then(function(r){return r||run(i+1);}).catch(function(){return run(i+1);});
+    if(i>=steps.length) return Promise.resolve(fallbackQ);
+    return steps[i]().then(function(r){
+      if(r&&r.lat) return r;                 // 座標が取れたら即採用
+      if(r&&r.query&&!fallbackQ) fallbackQ=r; // 地名だけなら保険として保持して次へ
+      return run(i+1);
+    }).catch(function(){return run(i+1);});
   }
   return run(0);
 }
